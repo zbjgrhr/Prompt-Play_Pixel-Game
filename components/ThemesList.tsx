@@ -4,12 +4,13 @@ import React, { forwardRef } from 'react'
 import { Card, Space, Skeleton } from 'antd'
 import { ThemesListProps } from '../types'
 import { useGameStore } from '../lib/store'
+import { isCustomTheme } from '../lib/theme-utils'
 
 const ThemesList = forwardRef<HTMLDivElement, ThemesListProps>((
   { themes, selectedTheme, onThemeSelect },
   ref
 ) => {
-  const { gameData } = useGameStore()
+  const { getGameDataForTheme } = useGameStore()
   return (
     <Card
       title="Theme List"
@@ -53,9 +54,11 @@ const ThemesList = forwardRef<HTMLDivElement, ThemesListProps>((
                   ) : (
                     <img
                         alt={theme.name}
-                        src={theme.id === 'custom' && gameData?.data?.levels?.[0]?.backgroundUrl 
-                          ? gameData.data.levels[0].backgroundUrl 
-                          : theme.backgroundImage}
+                        src={
+                          isCustomTheme(theme.id) && getGameDataForTheme(theme.id)?.data?.levels?.[0]?.backgroundUrl
+                            ? getGameDataForTheme(theme.id).data!.levels[0].backgroundUrl
+                            : theme.backgroundImage
+                        }
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       />
                   )}

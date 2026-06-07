@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react'
 import { message } from 'antd'
-import { useGameStore, GameTheme } from '@/lib/store'
+import { useGameStore } from '@/lib/store'
+import { GameTheme } from '@/lib/theme-utils'
 import {
   ProjectHeader,
   ModelSelector,
@@ -10,8 +11,11 @@ import {
   ActionButtons
 } from './ui/index'
 import { PRESET_THEMES } from '../configs'
+import { syncPlayableLevels } from '@/lib/virtual-levels'
 
 export interface SideMenuProps {
+  apiKey: string
+  onApiKeyChange: (apiKey: string) => void
   onStartGame?: () => void
   onCreateTheme?: () => void
   onThemeUpdate?: (themes: any[]) => void
@@ -19,6 +23,8 @@ export interface SideMenuProps {
     theme: string;
     prompt: string;
     types: readonly ('character' | 'background' | 'ground' | 'obstacle')[];
+    levelCount?: number;
+    apiKey: string;
   }) => Promise<any>
   onRegeneratingImagesChange?: (regeneratingImages: {
     character: boolean;
@@ -32,6 +38,8 @@ export interface SideMenuProps {
 }
 
 const SideMenu: React.FC<SideMenuProps> = ({
+  apiKey,
+  onApiKeyChange,
   onStartGame,
   onCreateTheme,
   onThemeUpdate,
@@ -63,7 +71,6 @@ const SideMenu: React.FC<SideMenuProps> = ({
   const [showCustomInput, setShowCustomInput] = useState(false)
 
   const [customThemeName, setCustomThemeName] = useState('')
-  const [apiKey, setApiKey] = useState('sk-84083f55216c4c53ad9ebf77e3f2dc7f')
   const [selectedModel, setSelectedModel] = useState('Qwen-Image')
   const [isThemeCreated, setIsThemeCreated] = useState(false)
   const [presetThemes, setPresetThemes] = useState(PRESET_THEMES)
@@ -131,7 +138,8 @@ const SideMenu: React.FC<SideMenuProps> = ({
         theme: isCustomTheme ? (customThemeName.trim() || 'custom') : selectedTheme,
         prompt: isCustomTheme ? customPrompt : selectedThemeInfo?.description || '',
         types: ['character', 'background', 'ground', 'obstacle'] as const,
-        levelCount: levelCount
+        levelCount: levelCount,
+        apiKey: apiKey.trim(),
       }
 
       const result = generateImages ? await generateImages(requestBody) : null
@@ -145,15 +153,16 @@ const SideMenu: React.FC<SideMenuProps> = ({
         const generationTime = (endTime - startTime) / 1000
         console.log(`Generation completed in ${generationTime.toFixed(2)} seconds for ${levelCount} levels`)
         
-        setGameData(result)
-        
-        // 根据生成时间和关卡数量显示不同的成功消息
-        const successMessage = isLargeGeneration 
+        const finalThemeId = `custom-${Date.now()}` as GameTheme
+        setGameData(result, finalThemeId)
+
+        const { removeGameDataForTheme } = useGameStore.getState()
+        removeGameDataForTheme(loadingThemeId)
+
+        const successMessage = isLargeGeneration
           ? `${levelCount} levels created successfully! (${generationTime.toFixed(1)}s)`
           : 'Generation complete!'
         setLoadingMessage(successMessage)
-
-        const finalThemeId = `custom-${Date.now()}` as GameTheme
         
         // 更新全局状态中的处理后图像，确保新生成的图像能正确显示和持久化
         const { updateProcessedImage } = useGameStore.getState()
@@ -238,11 +247,16 @@ const SideMenu: React.FC<SideMenuProps> = ({
   }
 
   const handleStartGame = () => {
-    // 确保在游戏开始前同步当前选中的主题到localStorage
-    const { saveToLocalStorage } = useGameStore.getState()
+    const state = useGameStore.getState()
+    const { gameData, levelCount, selectedTheme, setGameData, setCurrentLevelIndex, setTotalLevels, setGameState, saveToLocalStorage } = state
+    const { gameData: synced, totalLevels } = syncPlayableLevels(selectedTheme, levelCount, gameData)
+    if (synced.data?.levels?.length) {
+      setGameData(synced, selectedTheme)
+      setTotalLevels(totalLevels)
+    }
+    setCurrentLevelIndex(0)
+    setGameState('playing')
     saveToLocalStorage()
-    
-    // Call external callback if provided
     onStartGame?.()
   }
 
@@ -268,7 +282,7 @@ const SideMenu: React.FC<SideMenuProps> = ({
           selectedModel={selectedModel}
           onModelChange={setSelectedModel}
           apiKey={apiKey}
-          onApiKeyChange={setApiKey}
+          onApiKeyChange={onApiKeyChange}
         />
 
         <ThemeCustomizer

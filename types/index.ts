@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import { GameTheme } from '@/lib/store'
+import { GameTheme } from '@/lib/theme-utils'
 
 // 主题相关类型
 export interface Theme {
@@ -95,7 +95,8 @@ export interface ThemePreviewProps {
     ground: boolean;
     obstacle: boolean;
   }
-  onRegenerateImage?: (themeId: string, imageType: 'character' | 'background' | 'ground' | 'obstacle') => Promise<void>
+  apiKey?: string
+  onRegenerateImage?: (themeId: string, imageType: 'character' | 'background' | 'ground' | 'obstacle', apiKey: string) => Promise<void>
   onDeleteTheme?: (themeId: string) => void
 }
 

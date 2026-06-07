@@ -1,4 +1,3 @@
-import { GameTheme } from '@/lib/store'
 import { Theme } from '@/types'
 
 /**
@@ -29,7 +28,7 @@ export const GAME_TEMPLATES = {
  */
 export const PRESET_THEMES: Theme[] = [
   {
-    id: 'fantasy' as GameTheme,
+    id: 'fantasy',
     name: 'Fantasy',
     description: 'A fantasy world of magic, dragons, castles, and forests',
     characterImage: 'https://img.alicdn.com/imgextra/i2/O1CN01jUlQ0L237JvklbMar_!!6000000007208-2-tps-1328-1328.png',
@@ -38,7 +37,7 @@ export const PRESET_THEMES: Theme[] = [
     obstacleImage: 'https://img.alicdn.com/imgextra/i2/O1CN01NKpF221RbahyffacB_!!6000000002130-2-tps-1328-1328.png',
   },
   {
-    id: 'cyberpunk' as GameTheme,
+    id: 'cyberpunk',
     name: 'Cyberpunk',
     description: 'A sci-fi world of neon lights, machinery, and future cities',
     characterImage: 'https://img.alicdn.com/imgextra/i4/O1CN016rAWdt1UXsLJ4Qjsl_!!6000000002528-2-tps-1328-1328.png',
@@ -47,7 +46,7 @@ export const PRESET_THEMES: Theme[] = [
     obstacleImage: 'https://img.alicdn.com/imgextra/i2/O1CN01NKpF221RbahyffacB_!!6000000002130-2-tps-1328-1328.png',
   },
   {
-    id: 'western-world' as GameTheme,
+    id: 'western-world',
     name: 'Western World',
     description: 'A wild west world of cowboys, saloons, desert landscapes, and frontier towns',
     characterImage: 'https://img.alicdn.com/imgextra/i4/O1CN01qxICQy1DqKq1mBrHk_!!6000000000267-2-tps-1328-1328.png',
@@ -56,7 +55,7 @@ export const PRESET_THEMES: Theme[] = [
     obstacleImage: 'https://img.alicdn.com/imgextra/i2/O1CN01NKpF221RbahyffacB_!!6000000002130-2-tps-1328-1328.png',
   },
   {
-    id: 'underwater-world' as GameTheme,
+    id: 'underwater-world',
     name: 'Underwater World',
     description: 'A mysterious underwater world of coral reefs, deep sea creatures, and ancient underwater civilizations',
     characterImage: 'https://img.alicdn.com/imgextra/i4/O1CN01DCkIcD1oYbHjJTTuU_!!6000000005237-2-tps-1328-1328.png',

@@ -6,6 +6,7 @@ import { DownloadOutlined, RotateLeftOutlined, RotateRightOutlined, SwapOutlined
 import { ThemePreviewProps } from '@/types'
 import { useState, useEffect, useMemo } from 'react'
 import { useGameStore } from '@/lib/store'
+import { getThemeId, isCustomTheme, isPresetTheme } from '@/lib/theme-utils'
 
 const { Text } = Typography
 
@@ -147,7 +148,7 @@ const LevelBackgrounds: React.FC<LevelBackgroundsProps> = ({ levelsData, renderT
       justifyContent: 'flex-start'
     }}>
       {levelsData.map((level: any, index: number) => (
-        <div key={index} style={{ position: 'relative' }}>
+        <div key={level.id || index} style={{ position: 'relative' }}>
           <div style={{
             position: 'absolute',
             top: '4px',
@@ -196,6 +197,7 @@ const ThemePreview: React.FC<ThemePreviewProps> = ({
   selectedTheme,
   themes,
   regeneratingImages = { character: false, background: false, ground: false, obstacle: false },
+  apiKey = '',
   onRegenerateImage,
   onDeleteTheme
 }) => {
@@ -215,7 +217,7 @@ const ThemePreview: React.FC<ThemePreviewProps> = ({
   }, [loadFromLocalStorage])
   // 使用useMemo优化图像数据计算
   const { previewImages, levelsData, currentThemeId } = useMemo(() => {
-    const themeId = selectedTheme === 'custom' ? 'custom' : selectedTheme || 'fantasy'
+    const themeId = getThemeId(selectedTheme)
     let baseImages: any = {
       character: null,
       background: null,
@@ -224,7 +226,7 @@ const ThemePreview: React.FC<ThemePreviewProps> = ({
     }
     let levels = null
 
-    if (selectedTheme && !selectedTheme.startsWith('custom')) {
+    if (selectedTheme && isPresetTheme(selectedTheme)) {
       const theme = themes.find(t => t.id === selectedTheme)
       if (theme) {
         baseImages = {
@@ -236,7 +238,7 @@ const ThemePreview: React.FC<ThemePreviewProps> = ({
         // 为预设主题创建虚拟关卡数据
         levels = [{ backgroundUrl: theme.backgroundImage }]
       }
-    } else if (gameData?.data) {
+    } else if (isCustomTheme(selectedTheme) && gameData?.data) {
       const characterUrl = gameData.data.characterUrl
       const firstLevel = gameData.data.levels?.[0]
       const backgroundUrl = firstLevel?.backgroundUrl
@@ -465,7 +467,7 @@ const ThemePreview: React.FC<ThemePreviewProps> = ({
                   alt="Character"
                   isLoading={regeneratingImages.character || processingImages.character}
                   onProcessImage={() => handleProcessImage('character')}
-                  onRegenerateImage={onRegenerateImage ? () => onRegenerateImage(selectedTheme, 'character') : undefined}
+                  onRegenerateImage={onRegenerateImage ? () => onRegenerateImage(selectedTheme, 'character', apiKey) : undefined}
                   renderToolbar={renderToolbar}
                   imageType="character"
                 />
@@ -491,7 +493,7 @@ const ThemePreview: React.FC<ThemePreviewProps> = ({
                   <Button
                     size="small"
                     icon={<RotateCcw size={12} />}
-                    onClick={() => onRegenerateImage(selectedTheme, 'background')}
+                    onClick={() => onRegenerateImage(selectedTheme, 'background', apiKey)}
                     style={{ padding: '4px 8px', height: '28px', fontSize: '12px' }}
                     loading={regeneratingImages.background}
                   >
@@ -512,7 +514,7 @@ const ThemePreview: React.FC<ThemePreviewProps> = ({
                   alt="Ground Texture"
                   isLoading={regeneratingImages.ground || processingImages.ground}
                   onProcessImage={() => handleProcessImage('ground')}
-                  onRegenerateImage={onRegenerateImage ? () => onRegenerateImage(selectedTheme, 'ground') : undefined}
+                  onRegenerateImage={onRegenerateImage ? () => onRegenerateImage(selectedTheme, 'ground', apiKey) : undefined}
                   renderToolbar={renderToolbar}
                   imageType="ground"
                 />
@@ -530,7 +532,7 @@ const ThemePreview: React.FC<ThemePreviewProps> = ({
                   alt="Obstacle"
                   isLoading={regeneratingImages.obstacle || processingImages.obstacle}
                   onProcessImage={() => handleProcessImage('obstacle')}
-                  onRegenerateImage={onRegenerateImage ? () => onRegenerateImage(selectedTheme, 'obstacle') : undefined}
+                  onRegenerateImage={onRegenerateImage ? () => onRegenerateImage(selectedTheme, 'obstacle', apiKey) : undefined}
                   renderToolbar={renderToolbar}
                   imageType="obstacle"
                 />

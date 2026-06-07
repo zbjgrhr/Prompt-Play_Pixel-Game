@@ -26,9 +26,21 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({ className }) => {
         speed={0.5}
         scrambleChars={':.'}
       >
-        PIXEL SEED
+        PIXEL WORLD
       </ScrambledText>
-      <CurvedLoop marqueeText="Grow infinite pixel worlds with an AI seed ✦" />
+      <CurvedLoop marqueeText="Prompt Play · 提示即玩 ✦ Type a theme, play a pixel world ✦ AI 生成像素关卡，立刻开玩 ✦" />
+      <p style={{
+        fontSize: '12px',
+        color: '#888',
+        textAlign: 'center',
+        marginTop: '12px',
+        lineHeight: 1.6,
+        maxWidth: '320px',
+      }}>
+        Powered by <strong style={{ color: '#1890ff' }}>Prompt Play</strong> — 由提示词驱动的像素世界。
+        <br />
+        Pick a theme or write a prompt, AI generates your world and you play instantly.
+      </p>
     </div>
   )
 }

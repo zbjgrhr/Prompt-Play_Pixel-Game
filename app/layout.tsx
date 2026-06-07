@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { AntdRegistry } from '@ant-design/nextjs-registry';
+import { AppProviders } from '@/components/AppProviders';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pixel Seed - AI Generated Pixel Game",
-  description: "Grow infinite pixel worlds with an AI seed. AI-generated 2D pixel-style web game.",
+  title: "Pixel World · Prompt Play",
+  description: "Prompt Play 提示即玩 — AI 生成 2D 像素风关卡，输入主题即可游玩 | Type a theme, generate pixel assets, play instantly.",
 };
 
 export default function RootLayout({
@@ -28,7 +28,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AntdRegistry>{children}</AntdRegistry>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

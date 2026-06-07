@@ -1,11 +1,33 @@
 'use client'
 
-import { Card } from 'antd'
+import { Card, Drawer, Tabs, Select, Slider, Switch, Typography } from 'antd'
+import { MenuOutlined } from '@ant-design/icons'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useGameStore } from '@/lib/store'
 import { GameCanvasProps } from '@/types'
 import { PRESET_THEMES } from '@/configs'
+import { GAME_STORY } from '@/configs/game-story'
+import { GAME_MANUAL } from '@/configs/game-manual'
+import { getThemeId, isCustomTheme, isPresetTheme } from '@/lib/theme-utils'
+import {
+  GameSettings,
+  DEFAULT_GAME_SETTINGS,
+  loadGameSettings,
+  saveGameSettings,
+  getGraphicsFilter,
+} from '@/lib/game-settings'
+import {
+  buildGroundTiles,
+  buildLevelObstacles,
+  computeStandY,
+  getParallaxOffset,
+  PLAYER_GROUND_Y,
+} from '@/lib/level-layout'
+
+const { Text, Paragraph } = Typography
+
+type SettingsTab = 'settings' | 'story' | 'manual'
 
 const GameCanvas: React.FC<GameCanvasProps> = ({
   loadingProgress = 0,
@@ -29,8 +51,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     groundHeight,
     obstacles,
     setGroundTiles,
-    setGroundHeight,
-    addObstacle,
+    setObstacles,
     isCollisionEnabled,
     loadFromLocalStorage,
     getProcessedImagesForTheme,
@@ -39,120 +60,84 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     nextLevel,
     isLastLevel,
     getCurrentLevel,
-    setGameData
   } = useGameStore()
+
+  const gameLoopRef = useRef({
+    currentLevelIndex,
+    totalLevels,
+    gameData,
+    isLastLevel,
+    nextLevel,
+    initializeLevelLayout: () => {},
+    preloadImages: async (_urls: { [key: string]: string }) => {},
+  })
+
+  const isTransitioningRef = useRef(false)
+  const [levelTransition, setLevelTransition] = useState<string | null>(null)
+  const [isPaused, setIsPaused] = useState(false)
+  const [isGameOver, setIsGameOver] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('settings')
+  const [gameSettings, setGameSettings] = useState<GameSettings>(DEFAULT_GAME_SETTINGS)
+  const wasPausedBeforeSettings = useRef(false)
+  const [currentAction, setCurrentAction] = useState('Idle')
 
   // 组件加载时从localStorage恢复数据
   useEffect(() => {
     loadFromLocalStorage()
+    setGameSettings(loadGameSettings())
   }, [loadFromLocalStorage])
 
-  const [isPaused, setIsPaused] = useState(false)
-  const [isGameOver, setIsGameOver] = useState(false)
-  const [currentAction, setCurrentAction] = useState('Idle')
+  const updateGameSettings = useCallback((patch: Partial<GameSettings>) => {
+    setGameSettings((prev) => {
+      const next = { ...prev, ...patch }
+      saveGameSettings(next)
+      return next
+    })
+  }, [])
+
+  const handleOpenSettings = useCallback((tab: SettingsTab = 'settings') => {
+    wasPausedBeforeSettings.current = isPaused
+    setSettingsTab(tab)
+    setSettingsOpen(true)
+  }, [isPaused])
+
+  const handleCloseSettings = useCallback(() => {
+    setSettingsOpen(false)
+    if (!isGameOver) {
+      setIsPaused(wasPausedBeforeSettings.current)
+    }
+  }, [isGameOver])
+
   const [keys, setKeys] = useState<Set<string>>(new Set())
   const [preloadedImages, setPreloadedImages] = useState<{ [key: string]: boolean }>({})
   const [isPreloading, setIsPreloading] = useState(false)
 
-  // 初始化地面系统
-  const initializeGround = useCallback(() => {
-    // 动态获取实际画布宽度
-    let canvasWidth = 1000 // 默认宽度作为后备
+  const getCanvasWidth = useCallback(() => {
     if (gameCanvasRef.current) {
       const rect = gameCanvasRef.current.getBoundingClientRect()
-      canvasWidth = Math.max(rect.width, 1000) // 确保至少1000px宽度
+      return Math.max(rect.width, 1000)
     }
+    return 1000
+  }, [])
 
-    const groundY = 400 // 地面y位置，基于地面指示线(底部上方125px)
-
-    // 创建一个完整的地面条带，覆盖整个画布宽度
-    const tiles = [{
-      id: 'ground-strip',
-      x: 0,
-      y: groundY,
-      width: canvasWidth,
-      height: 100 // 地面高度
-    }]
-
+  const initializeLevelLayout = useCallback(() => {
+    const canvasWidth = getCanvasWidth()
+    const level = getCurrentLevel()
+    const tiles = buildGroundTiles(canvasWidth, currentLevelIndex)
+    const generated = buildLevelObstacles(
+      canvasWidth,
+      currentLevelIndex,
+      level?.obstacles,
+    )
     setGroundTiles(tiles)
-  }, [setGroundTiles])
-
-  // 智能障碍物生成算法
-  const initializeObstacles = useCallback(() => {
-    // 动态获取实际画布宽度
-    let canvasWidth = 1000 // 默认宽度作为后备
-    if (gameCanvasRef.current) {
-      const rect = gameCanvasRef.current.getBoundingClientRect()
-      canvasWidth = Math.max(rect.width, 1000) // 确保至少1000px宽度
-    }
-
-    const groundY = 400 // 地面y位置
-    const obstacleWidth = 48
-    const obstacleHeight = 48
-    const minDistance = 80 // 最小安全距离
-    const startX = 150 // 起始生成位置，给角色留出空间
-    const endX = canvasWidth - 150 // 动态计算结束位置，避免太靠近边界
-    const maxAttempts = 50 // 最大尝试次数，防止无限循环
-
-    const generatedObstacles = []
-    const targetCount = 6 // 目标障碍物数量
-
-    // 检查两个矩形是否重叠或距离过近
-    const isValidPosition = (newX: number, newY: number, existingObstacles: Array<{ x: number, y: number }>) => {
-      for (const existing of existingObstacles) {
-        const distanceX = Math.abs(newX - existing.x)
-        const distanceY = Math.abs(newY - existing.y)
-
-        // 检查是否满足最小距离要求
-        if (distanceX < minDistance && distanceY < minDistance) {
-          return false
-        }
-      }
-      return true
-    }
-
-    // 使用网格化方法确保均匀分布
-    const gridSize = Math.floor((endX - startX) / targetCount)
-
-    for (let i = 0; i < targetCount; i++) {
-      let attempts = 0
-      let validPosition = false
-      let obstacleX = 0
-      let obstacleY = groundY - obstacleHeight
-
-      while (!validPosition && attempts < maxAttempts) {
-        // 在当前网格区域内随机生成位置
-        const gridStart = startX + (i * gridSize)
-        const gridEnd = Math.min(gridStart + gridSize - obstacleWidth, endX - obstacleWidth)
-
-        obstacleX = Math.random() * (gridEnd - gridStart) + gridStart
-        obstacleY = groundY - obstacleHeight
-
-        validPosition = isValidPosition(obstacleX, obstacleY, generatedObstacles)
-        attempts++
-      }
-
-      // 如果找到有效位置，添加障碍物
-      if (validPosition) {
-        const obstacle = {
-          id: `obstacle-${Math.random().toString(36).substr(2, 9)}-${i}-${Date.now()}`,
-          x: obstacleX,
-          y: obstacleY,
-          width: obstacleWidth,
-          height: obstacleHeight,
-          type: 'rock'
-        }
-        generatedObstacles.push(obstacle)
-        addObstacle(obstacle)
-      }
-    }
-  }, [addObstacle])
+    setObstacles(generated)
+  }, [getCanvasWidth, getCurrentLevel, currentLevelIndex, setGroundTiles, setObstacles])
 
   // 设置玩家初始位置
   const setPlayerInitialPosition = useCallback(() => {
-    const initialX = 50 // 道路起始点
-    const initialY = 352 // 角色初始y位置，站立在地面纹理上方（400 - 48px角色高度）
-    setPlayerPosition({ x: initialX, y: initialY })
+    const initialX = 50
+    setPlayerPosition({ x: initialX, y: PLAYER_GROUND_Y })
   }, [setPlayerPosition])
 
   // 获取实际使用的图像URL（优先使用抠图结果）
@@ -166,7 +151,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
 
     // 获取当前主题的抠图结果
-    const currentThemeId = selectedTheme === 'custom' ? 'custom' : selectedTheme || 'fantasy'
+    const currentThemeId = getThemeId(selectedTheme)
     const themeProcessedImages = getProcessedImagesForTheme(currentThemeId)
 
     return {
@@ -175,61 +160,31 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       ground: themeProcessedImages.ground || baseUrls.ground,
       obstacle: themeProcessedImages.obstacle || baseUrls.obstacle
     }
-  }, [gameData, selectedTheme, getProcessedImagesForTheme])
+  }, [gameData, selectedTheme, getProcessedImagesForTheme, getCurrentLevel])
 
-  // 游戏初始化
   useEffect(() => {
-    console.log('游戏初始化 - gameData:', gameData, 'totalLevels:', totalLevels, 'currentLevelIndex:', currentLevelIndex)
-    
-    // 如果没有游戏数据，创建测试数据
-    if (!gameData?.data?.levels || gameData.data.levels.length === 0) {
-      const testGameData = {
-        success: true,
-        data: {
-          characterUrl: 'https://via.placeholder.com/48x48/FF6B6B/FFFFFF?text=C',
-          levels: [
-            {
-              id: 'level-1',
-              backgroundUrl: 'https://via.placeholder.com/800x400/87CEEB/FFFFFF?text=Level+1',
-              groundUrl: 'https://via.placeholder.com/800x100/8FBC8F/FFFFFF?text=Ground+1',
-              obstacleUrl: 'https://via.placeholder.com/48x48/8B4513/FFFFFF?text=Rock',
-              obstacles: []
-            },
-            {
-              id: 'level-2', 
-              backgroundUrl: 'https://via.placeholder.com/800x400/FFB6C1/FFFFFF?text=Level+2',
-              groundUrl: 'https://via.placeholder.com/800x100/DDA0DD/FFFFFF?text=Ground+2',
-              obstacleUrl: 'https://via.placeholder.com/48x48/696969/FFFFFF?text=Stone',
-              obstacles: []
-            }
-          ]
-        },
-        generationId: 'test-' + Date.now(),
-        timestamp: new Date().toISOString()
-      }
-      setGameData(testGameData)
-      console.log('创建测试游戏数据:', testGameData)
-    }
-    
-    initializeGround()
-    if (obstacles.length === 0) {
-      initializeObstacles()
-    }
+    initializeLevelLayout()
     setPlayerInitialPosition()
-  }, [initializeGround, initializeObstacles, setPlayerInitialPosition, gameData, totalLevels, currentLevelIndex, setGameData])
+    isTransitioningRef.current = false
+    setLevelTransition(null)
+  }, [initializeLevelLayout, setPlayerInitialPosition, selectedTheme, currentLevelIndex])
 
 
   // 键盘控制
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // ESC键处理暂停/恢复 - 只在非游戏结束状态下生效
     if (e.key === 'Escape' && !isGameOver) {
-      setIsPaused(!isPaused)
+      if (settingsOpen) {
+        handleCloseSettings()
+      } else {
+        setIsPaused((prev) => !prev)
+      }
       return
     }
 
-    if (isPaused || isGameOver) return
+    if (isPaused || isGameOver || settingsOpen || levelTransition) return
     setKeys(prev => new Set(prev).add(e.key.toLowerCase()))
-  }, [isPaused, isGameOver])
+  }, [isGameOver, isPaused, settingsOpen, levelTransition, handleCloseSettings])
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     setKeys(prev => {
@@ -244,8 +199,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       setIsMobile(window.innerWidth <= 768)
       // 当屏幕尺寸改变时，重新初始化地面以适应新的画布宽度
       setTimeout(() => {
-        initializeGround()
-      }, 100) // 延迟执行，确保DOM更新完成
+        initializeLevelLayout()
+      }, 100)
     }
 
     checkScreenSize()
@@ -258,7 +213,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [handleKeyDown, handleKeyUp, initializeGround])
+  }, [handleKeyDown, handleKeyUp, initializeLevelLayout])
 
   // 碰撞检测函数
   const checkCollision = useCallback((x: number, y: number, width: number = 48, height: number = 48) => {
@@ -290,7 +245,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   // 游戏循环 - 使用requestAnimationFrame优化性能
   useEffect(() => {
-    if (isPaused) return
+    if (isPaused || isGameOver || settingsOpen || levelTransition) return
 
     let animationId: number
     let lastTime = 0
@@ -310,7 +265,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           const playerHeight = 48
           const gravity = 0.8
           const jumpPower = -15
-          const groundY = 352 // 固定地面位置，与地面纹理对齐
+          const groundY = computeStandY(newX, playerWidth, obstacles)
 
           let newFacingDirection = prev.facingDirection
 
@@ -332,63 +287,58 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               const actualCanvasWidth = rect.width
               gameEndBoundary = actualCanvasWidth - playerWidth - 50 // 增加安全边距，确保能触发游戏结束
             }
-            // 检查是否到达边界
-            if (testX >= gameEndBoundary) {
-              // 调试信息：输出当前关卡状态
-              console.log('到达边界 - currentLevelIndex:', currentLevelIndex, 'totalLevels:', totalLevels, 'isLastLevel:', isLastLevel())
-              // 检查是否为最后一个关卡
-              if (isLastLevel()) {
-                // 触发游戏结束 - 随机选择有趣的提示文案
-                const gameOverMessages = [
-                  '🎯 Congratulations explorer! You have reached the edge of the world!',
-                  '🚀 Amazing! You successfully traversed the entire level!',
-                  '⭐ Mission complete! You are a true jumping master!',
-                  '🏆 Outstanding! You conquered this pixel world!',
-                  '🎮 Awesome! Ready for the next challenge!'
+            if (testX >= gameEndBoundary && !isTransitioningRef.current) {
+              const loopState = gameLoopRef.current
+              if (loopState.isLastLevel()) {
+                isTransitioningRef.current = true
+                const victoryMessages = [
+                  '🏆 Victory! You conquered the dragon kingdom!',
+                  '🎯 Quest Complete! The realm is restored!',
+                  '⭐ Legendary! All zones cleared!',
+                  '🐉 The ancient dragon has been reached — you win!',
+                  '🚀 Epic adventure complete! True hero!'
                 ]
-                const randomMessage = gameOverMessages[Math.floor(Math.random() * gameOverMessages.length)]
-                // 确保状态同步更新
-                setCurrentAction(`Game Over - ${randomMessage}`)
-                setTimeout(() => setIsGameOver(true), 0) // 使用setTimeout确保currentAction先更新
+                const randomMessage = victoryMessages[Math.floor(Math.random() * victoryMessages.length)]
+                setCurrentAction(`Victory - ${randomMessage}`)
+                setTimeout(() => {
+                  setIsGameOver(true)
+                  isTransitioningRef.current = false
+                }, 0)
               } else {
-                // 切换到下一关卡
-                const nextLevelMessages = [
-                  '🌟 Level Complete! Loading next challenge...',
-                  '🚀 Great job! Advancing to the next level...',
-                  '⭐ Well done! Next level awaits...',
-                  '🎯 Level cleared! Moving forward...'
-                ]
-                const randomMessage = nextLevelMessages[Math.floor(Math.random() * nextLevelMessages.length)]
-                setCurrentAction(randomMessage)
+                isTransitioningRef.current = true
+                const completedLevel = loopState.currentLevelIndex + 1
+                const nextLevelNum = completedLevel + 1
+                setLevelTransition(`第 ${completedLevel} 关完成 → 进入第 ${nextLevelNum} 关`)
+                setCurrentAction(`Level ${completedLevel} complete`)
 
-                // 延迟切换关卡，让玩家看到提示信息
                 setTimeout(async () => {
-                  // 预加载下一关卡图像
-                  const nextLevelIndex = currentLevelIndex + 1
-                  if (gameData?.data?.levels && nextLevelIndex < gameData.data.levels.length) {
-                    const nextLevel = gameData.data.levels[nextLevelIndex]
+                  const state = gameLoopRef.current
+                  const nextLevelIndex = state.currentLevelIndex + 1
+                  const levels = state.gameData?.data?.levels
+                  if (levels && nextLevelIndex < levels.length) {
+                    const nextLevelData = levels[nextLevelIndex]
                     const nextLevelImages: { [key: string]: string } = {}
-                    if (nextLevel.backgroundUrl) nextLevelImages.background = nextLevel.backgroundUrl
-                    if (nextLevel.groundUrl) nextLevelImages.ground = nextLevel.groundUrl
-                    if (nextLevel.obstacleUrl) nextLevelImages.obstacle = nextLevel.obstacleUrl
+                    if (nextLevelData.backgroundUrl) nextLevelImages.background = nextLevelData.backgroundUrl
+                    if (nextLevelData.groundUrl) nextLevelImages.ground = nextLevelData.groundUrl
+                    if (nextLevelData.obstacleUrl) nextLevelImages.obstacle = nextLevelData.obstacleUrl
 
                     if (Object.keys(nextLevelImages).length > 0) {
-                      await preloadImages(nextLevelImages)
+                      await state.preloadImages(nextLevelImages)
                     }
                   }
 
-                  nextLevel()
-                  // 重置角色位置到关卡开始位置
-                  setCharacter(prev => ({
+                  state.nextLevel()
+                  setCharacter((prev) => ({
                     ...prev,
                     x: 50,
-                    y: 352,
+                    y: PLAYER_GROUND_Y,
                     velocityY: 0,
                     isJumping: false,
-                    onGround: true
+                    onGround: true,
                   }))
-                  // 重新生成障碍物位置
-                  initializeObstacles()
+                  state.initializeLevelLayout()
+                  setLevelTransition(null)
+                  isTransitioningRef.current = false
                   setCurrentAction('Level started!')
                 }, 1500)
               }
@@ -444,8 +394,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             // 在地面或障碍物上时，检查是否仍有支撑
             let hasSupport = false
 
-            // 检查地面支撑
-            if (newY >= groundY - 5) {
+            const standY = computeStandY(newX, playerWidth, obstacles)
+            if (Math.abs(newY - standY) <= 5) {
               hasSupport = true
             } else {
               // 检查障碍物支撑
@@ -507,12 +457,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         cancelAnimationFrame(animationId)
       }
     }
-  }, [keys, isPaused, setPlayerPosition, checkCollision, obstacles])
+  }, [keys, isPaused, isGameOver, settingsOpen, levelTransition, setPlayerPosition, checkCollision, obstacles])
 
   const handleBackToMenu = () => {
     resetGame()
-    setIsGameOver(false) // 重置游戏结束状态
-    setIsPaused(false) // 重置暂停状态
+    setIsGameOver(false)
+    setIsPaused(false)
+    setLevelTransition(null)
+    isTransitioningRef.current = false
     setGameState('menu')
     if (onBackToMenu) {
       onBackToMenu()
@@ -520,7 +472,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   }
 
   const togglePause = () => {
-    setIsPaused(!isPaused)
+    setIsPaused((prev) => !prev)
   }
 
   // 图像预加载函数
@@ -550,6 +502,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     await Promise.all(loadPromises)
     setIsPreloading(false)
   }, [preloadedImages])
+
+  useEffect(() => {
+    gameLoopRef.current = {
+      currentLevelIndex,
+      totalLevels,
+      gameData,
+      isLastLevel,
+      nextLevel,
+      initializeLevelLayout,
+      preloadImages,
+    }
+  }, [currentLevelIndex, totalLevels, gameData, isLastLevel, nextLevel, initializeLevelLayout, preloadImages])
 
   // 预加载当前关卡图像
   useEffect(() => {
@@ -583,7 +547,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   // 获取当前主题的预览图片（优先使用localStorage中的更新数据）
   const getThemeImages = () => {
-    if (selectedTheme && selectedTheme !== 'custom') {
+    if (selectedTheme && isPresetTheme(selectedTheme)) {
       // 首先尝试从localStorage中获取更新后的主题数据
       let updatedTheme = null
       try {
@@ -611,8 +575,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         return themeImages
       }
     }
-    // 如果是自定义主题或生成的内容，优先使用抠图结果
-    if (getCurrentLevel() || Object.keys(processedImages).length > 0) {
+    if (isCustomTheme(selectedTheme) && (getCurrentLevel() || Object.keys(processedImages).length > 0)) {
       const actualUrls = getActualImageUrls()
       const customImages = {
         character: actualUrls.character,
@@ -635,7 +598,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   return (
     <Card
-      title="Game Canvas"
+      title="Pixel World"
       style={{
         flex: 1,
         height: '100%',
@@ -670,12 +633,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           position: 'relative'
         }}>
         {/* 游戏Canvas内容 */}
-        <div className="w-full h-full relative overflow-hidden" style={{
-          backgroundImage: themeImages.background ? `url(${themeImages.background})` : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat'
-        }}>
+        <div
+          className="w-full h-full relative overflow-hidden"
+          style={{
+            backgroundImage: themeImages.background ? `url(${themeImages.background})` : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            backgroundSize: 'cover',
+            backgroundPosition: getParallaxOffset(playerPosition.x),
+            backgroundRepeat: 'no-repeat',
+            filter: getGraphicsFilter(gameSettings.graphicsQuality),
+          }}
+        >
           <div className="relative w-full h-full">
             {/* 地面瓦片 */}
             {groundTiles.map(tile => (
@@ -697,7 +664,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             ))}
 
             {/* 障碍物 */}
-            {obstacles.map(obstacle => {
+            {obstacles.filter((o) => o.type !== 'platform').map(obstacle => {
               const currentLevel = getCurrentLevel()
               const obstacleUrl = currentLevel?.obstacleUrl || themeImages.obstacle
               return (
@@ -750,55 +717,197 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             {/* 地面指示线（开发用） */}
             <div className="absolute bottom-0 left-0 right-0 h-px bg-white/20" style={{ bottom: '125px' }} />
 
-            {/* 游戏UI */}
-            {/* 左侧控制面板 */}
-            <div className="absolute top-0 left-0 p-2 z-20">
-              <div className="bg-black/50 backdrop-blur-sm border border-white/20 rounded-lg p-2 text-white font-mono text-xs">
-                <div className="space-y-2">
-                  <button
-                    onClick={handleBackToMenu}
-                    className="w-full px-2 py-1 bg-white/10 hover:bg-white/20 border border-white/20 rounded text-xs transition-all duration-200"
-                  >
-                    Back to Menu
-                  </button>
-                  <button
-                    onClick={togglePause}
-                    className="w-full px-2 py-1 bg-white/10 hover:bg-white/20 border border-white/20 rounded text-xs transition-all duration-200"
-                  >
-                    {isPaused ? 'Resume' : 'Pause'}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* 右侧信息面板 */}
-            <div className="absolute top-0 right-0 p-2 z-20">
-              <div className="bg-black/50 backdrop-blur-sm border border-white/20 rounded-lg p-2 text-white font-mono text-xs">
-                <div className="space-y-1">
-                  <p>Pos: ({Math.round(playerPosition.x)}, {Math.round(playerPosition.y)})</p>
-                  <p>Action: {currentAction}</p>
-                  <p>Status: {isPaused ? 'Paused' : 'Playing'}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* 底部控制提示 */}
-            <div className="absolute bottom-2 sm:bottom-4 left-1/2 transform -translate-x-1/2 z-20">
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-black/50 backdrop-blur-sm border border-white/20 rounded-lg p-2 sm:p-4 text-white font-mono text-xs sm:text-sm text-center"
+            {/* 游戏UI — 右上角菜单按钮 */}
+            <div className="absolute top-0 right-0 p-2 z-40 flex flex-col items-end gap-2">
+              <button
+                onClick={() => handleOpenSettings('settings')}
+                className="w-9 h-9 flex items-center justify-center bg-black/50 backdrop-blur-sm border border-white/20 rounded-lg text-white hover:bg-white/20 transition-all duration-200"
+                title="菜单 Menu"
+                aria-label="Open settings menu"
               >
-                <div className="flex flex-col sm:flex-row space-y-1 sm:space-y-0 sm:space-x-6">
-                  <span>A/D / Left/Right: Move</span>
-                  <span>Space: Jump</span>
-                  <span>ESC: Pause</span>
+                <MenuOutlined style={{ fontSize: '16px' }} />
+              </button>
+              {gameSettings.showDebugInfo && (
+                <div className="bg-black/50 backdrop-blur-sm border border-white/20 rounded-lg p-2 text-white font-mono text-xs">
+                  <div className="space-y-1">
+                    <p>Level: {currentLevelIndex + 1}/{totalLevels}</p>
+                    <p>Pos: ({Math.round(playerPosition.x)}, {Math.round(playerPosition.y)})</p>
+                    <p>Action: {currentAction}</p>
+                    <p>Status: {levelTransition ? 'Transition' : settingsOpen ? 'Menu' : isPaused ? 'Paused' : 'Playing'}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 游戏内设置 Drawer */}
+            <Drawer
+              title={<span className="text-white font-mono">☰ 菜单 Menu</span>}
+              placement="right"
+              open={settingsOpen}
+              onClose={handleCloseSettings}
+              getContainer={false}
+              width={isMobile ? '85%' : 300}
+              zIndex={50}
+              styles={{
+                header: {
+                  background: 'rgba(0, 0, 0, 0.85)',
+                  borderBottom: '1px solid rgba(255,255,255,0.15)',
+                },
+                body: {
+                  background: 'rgba(0, 0, 0, 0.88)',
+                  padding: '12px 16px',
+                },
+                mask: {
+                  background: 'rgba(0, 0, 0, 0.45)',
+                },
+              }}
+              className="game-settings-drawer"
+            >
+              <div className="flex flex-col gap-2 mb-4 pb-4 border-b border-white/15">
+                <Text className="!text-gray-400 !text-xs font-mono block mb-1">
+                  游戏控制 · Game Controls
+                </Text>
+                <button
+                  type="button"
+                  onClick={() => setIsPaused((prev) => !prev)}
+                  className="w-full px-2 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded font-mono text-xs text-white transition-all duration-200"
+                >
+                  {isPaused ? '▶ 继续 Resume' : '⏸ 暂停 Pause'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleCloseSettings()
+                    handleBackToMenu()
+                  }}
+                  className="w-full px-2 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded font-mono text-xs text-white transition-all duration-200"
+                >
+                  🏠 返回主菜单 Back to Menu
+                </button>
+              </div>
+              <Tabs
+                activeKey={settingsTab}
+                onChange={(key) => setSettingsTab(key as SettingsTab)}
+                size="small"
+                items={[
+                  {
+                    key: 'settings',
+                    label: '设置',
+                    children: (
+                      <div className="space-y-5 text-white font-mono text-xs">
+                        <div>
+                          <Text className="!text-gray-300 block mb-2">画面 Graphics</Text>
+                          <Select
+                            value={gameSettings.graphicsQuality}
+                            onChange={(v) => updateGameSettings({ graphicsQuality: v })}
+                            style={{ width: '100%' }}
+                            options={[
+                              { value: 'low', label: '流畅 Low' },
+                              { value: 'medium', label: '标准 Medium' },
+                              { value: 'high', label: '高清 High' },
+                            ]}
+                          />
+                        </div>
+                        <div>
+                          <Text className="!text-gray-300 block mb-2">
+                            音量 Volume · {gameSettings.masterVolume}%
+                          </Text>
+                          <Slider
+                            min={0}
+                            max={100}
+                            value={gameSettings.masterVolume}
+                            onChange={(v) => updateGameSettings({ masterVolume: v })}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Text className="!text-gray-300">音效 Sound FX</Text>
+                          <Switch
+                            checked={gameSettings.soundEnabled}
+                            onChange={(v) => updateGameSettings({ soundEnabled: v })}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Text className="!text-gray-300">音乐 Music</Text>
+                          <Switch
+                            checked={gameSettings.musicEnabled}
+                            onChange={(v) => updateGameSettings({ musicEnabled: v })}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Text className="!text-gray-300">调试信息 Debug</Text>
+                          <Switch
+                            checked={gameSettings.showDebugInfo}
+                            onChange={(v) => updateGameSettings({ showDebugInfo: v })}
+                          />
+                        </div>
+                        <Paragraph className="!text-gray-500 !text-xs !mb-0">
+                          音量与音乐功能即将推出 · Audio coming soon
+                        </Paragraph>
+                      </div>
+                    ),
+                  },
+                  {
+                    key: 'story',
+                    label: '剧情',
+                    children: (
+                      <div className="text-white font-mono text-xs space-y-4">
+                        <Text strong className="!text-blue-300 !text-sm block">
+                          {GAME_STORY.title}
+                        </Text>
+                        {GAME_STORY.sections.map((section) => (
+                          <div key={section.heading}>
+                            <Text className="!text-orange-300 block mb-1">{section.heading}</Text>
+                            <Paragraph className="!text-gray-300 !text-xs whitespace-pre-line !mb-0">
+                              {section.body}
+                            </Paragraph>
+                          </div>
+                        ))}
+                      </div>
+                    ),
+                  },
+                  {
+                    key: 'manual',
+                    label: '说明书',
+                    children: (
+                      <div className="text-white font-mono text-xs space-y-4">
+                        <Text strong className="!text-blue-300 !text-sm block">
+                          {GAME_MANUAL.title}
+                        </Text>
+                        {GAME_MANUAL.sections.map((section) => (
+                          <div key={section.heading}>
+                            <Text className="!text-orange-300 block mb-1">{section.heading}</Text>
+                            <ul className="list-disc pl-4 space-y-1 text-gray-300">
+                              {section.items.map((item) => (
+                                <li key={item}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    ),
+                  },
+                ]}
+              />
+            </Drawer>
+
+            {/* 关卡切换遮罩 */}
+            {levelTransition && !settingsOpen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="absolute inset-0 bg-black/60 flex items-center justify-center z-35 pointer-events-none"
+              >
+                <div className="text-center px-6">
+                  <h2 className="text-2xl sm:text-3xl font-bold text-white font-mono mb-2">
+                    {levelTransition}
+                  </h2>
+                  <p className="text-yellow-200 font-mono text-sm">关卡切换中…</p>
                 </div>
               </motion.div>
-            </div>
+            )}
 
             {/* 暂停/游戏结束遮罩 */}
-            {(isPaused || isGameOver) && (
+            {(isPaused || isGameOver) && !settingsOpen && !levelTransition && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -807,16 +916,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               >
                 <div className="text-center">
                   <h2 className="text-4xl font-bold text-white font-mono mb-4">
-                    {isGameOver ? 'Game Over!' : 'Game Paused'}
+                    {isGameOver
+                      ? (currentAction.startsWith('Victory') ? '🏆 Victory!' : 'Game Over!')
+                      : 'Game Paused'}
                   </h2>
                   <p className="text-gray-300 font-mono mb-2">
                     {isGameOver
-                      ? currentAction.replace('Game Over - ', '')
+                      ? currentAction.replace(/^Victory - |^Game Over - /, '')
                       : 'Press ESC or click anywhere to continue'}
                   </p>
-                  {isGameOver && (
+                  {isGameOver && currentAction.startsWith('Victory') && (
                     <p className="text-yellow-300 font-mono text-sm">
-                      🌟 Your adventurous spirit is commendable!
+                      🌟 All levels cleared — Pixel World Odyssey complete!
                     </p>
                   )}
                   {isGameOver && (

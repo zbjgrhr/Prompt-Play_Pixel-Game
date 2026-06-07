@@ -24,7 +24,12 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
         onClick={onCreateTheme}
         loading={isLoading}
         style={{ width: '100%', height: '48px' }}
-        disabled={!apiKey.trim() || !customThemeName.trim() || !customPrompt.trim()}
+        disabled={
+          !apiKey.trim() ||
+          (customThemeName.trim() || customPrompt.trim()
+            ? !customThemeName.trim() || !customPrompt.trim()
+            : !selectedTheme)
+        }
       >
         {!isThemeCreated ? 'Create Theme' : 'Reset'}
       </Button>

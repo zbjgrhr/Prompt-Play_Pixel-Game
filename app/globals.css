@@ -115,3 +115,25 @@ body {
   font-family: Arial, Helvetica, sans-serif;
   overflow-x: hidden;
 }
+
+/* 游戏内设置 Drawer 暗色主题 */
+.game-settings-drawer .ant-drawer-close {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.game-settings-drawer .ant-tabs-tab {
+  color: rgba(255, 255, 255, 0.55) !important;
+}
+
+.game-settings-drawer .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #fff !important;
+}
+
+.game-settings-drawer .ant-tabs-ink-bar {
+  background: #1890ff;
+}
+
+.game-settings-drawer .ant-select-selector,
+.game-settings-drawer .ant-slider-rail {
+  background: rgba(255, 255, 255, 0.12) !important;
+}

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GAME_TEMPLATES } from '@/configs'
+import { getLevelSpecificPrompt } from '@/lib/prompt-utils'
 
 // DashScope API配置
 const DASHSCOPE_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation'
-const API_KEY = 'sk-84083f55216c4c53ad9ebf77e3f2dc7f'
 
 // 请求参数类型
 interface GenerateRequest {
@@ -11,6 +11,22 @@ interface GenerateRequest {
   prompt: string
   types?: ('character' | 'background' | 'ground' | 'obstacle')[]
   levelCount?: number // 关卡数量，默认为1
+  apiKey?: string
+}
+
+class ApiKeyError extends Error {
+  constructor() {
+    super('API key is required. Set DASHSCOPE_API_KEY or provide apiKey in request body.')
+    this.name = 'ApiKeyError'
+  }
+}
+
+function resolveApiKey(requestKey?: string): string {
+  const key = requestKey?.trim() || process.env.DASHSCOPE_API_KEY?.trim()
+  if (!key) {
+    throw new ApiKeyError()
+  }
+  return key
 }
 
 // 构建游戏风格提示词
@@ -66,8 +82,9 @@ async function processImageCutout(imageUrl: string, type: 'character' | 'backgro
 
 // 调用DashScope API
 async function callDashScopeAPI(
-  prompt: string, 
-  type: 'character' | 'background' | 'ground' | 'obstacle', 
+  prompt: string,
+  type: 'character' | 'background' | 'ground' | 'obstacle',
+  apiKey: string,
   size: string = '1328*1328',
   retryCount = 0
 ): Promise<string> {
@@ -81,7 +98,7 @@ async function callDashScopeAPI(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
         model: 'qwen-image',
@@ -115,7 +132,7 @@ async function callDashScopeAPI(
          const delay = baseDelay * Math.pow(2, retryCount) // 指数退避
          console.log(`[${new Date().toISOString()}] Rate limit hit for ${type} image generation, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries + 1})`)
          await new Promise(resolve => setTimeout(resolve, delay))
-         return callDashScopeAPI(prompt, type, size, retryCount + 1)
+         return callDashScopeAPI(prompt, type, apiKey, size, retryCount + 1)
        }
        
        console.error(`[${new Date().toISOString()}] DashScope API error:`, {
@@ -179,7 +196,9 @@ export async function POST(request: NextRequest) {
   
   try {
     const body: GenerateRequest = await request.json()
-    const { theme, prompt, types = ['character', 'background', 'ground', 'obstacle'], levelCount = 1 } = body
+    const { theme, prompt, types = ['character', 'background', 'ground', 'obstacle'], levelCount = 1, apiKey: requestApiKey } = body
+
+    const apiKey = resolveApiKey(requestApiKey)
 
     // 验证请求参数
     if (!theme || !prompt) {
@@ -219,7 +238,7 @@ export async function POST(request: NextRequest) {
     if (types.includes('character')) {
       const characterPrompt = buildPrompt('character', theme, prompt)
       console.log('Generating character image...')
-      const originalUrl = await callDashScopeAPI(characterPrompt, 'character', getSizeForType('character'))
+      const originalUrl = await callDashScopeAPI(characterPrompt, 'character', apiKey, getSizeForType('character'))
       
       // 对角色图像自动进行抠图处理
       console.log(`[${new Date().toISOString()}] Auto-processing character image for background removal`)
@@ -255,8 +274,9 @@ export async function POST(request: NextRequest) {
             await new Promise(resolve => setTimeout(resolve, delay))
           }
           
-          const typePrompt = buildPrompt(type, theme, `${prompt}, level ${levelIndex + 1} variation`)
-          const originalUrl = await callDashScopeAPI(typePrompt, type, getSizeForType(type))
+          const levelPrompt = getLevelSpecificPrompt(prompt, levelIndex)
+          const typePrompt = buildPrompt(type, theme, levelPrompt)
+          const originalUrl = await callDashScopeAPI(typePrompt, type, apiKey, getSizeForType(type))
           
           // 对地面和障碍物图像进行抠图处理
           let finalUrl = originalUrl
@@ -325,13 +345,15 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Generation error:', error)
 
+    const status = error instanceof ApiKeyError ? 400 : 500
+
     return NextResponse.json(
       {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',
         timestamp: new Date().toISOString()
       },
-      { status: 500 }
+      { status }
     )
   }
 }

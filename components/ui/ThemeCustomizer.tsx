@@ -1,7 +1,8 @@
 'use client'
 
-import { Typography, Input, InputNumber, message } from 'antd'
+import { Typography, Input, InputNumber, Select, message } from 'antd'
 import { ThemeCustomizerProps } from '@/types'
+import { PROMPT_TEMPLATES } from '@/configs/prompt-templates'
 
 const { Text } = Typography
 const { TextArea } = Input
@@ -14,8 +15,35 @@ const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
   levelCount,
   onLevelCountChange
 }) => {
+  const handleTemplateSelect = (templateId: string) => {
+    const template = PROMPT_TEMPLATES.find((t) => t.id === templateId)
+    if (!template) return
+
+    onThemeNameChange(template.themeName)
+    onPromptChange(template.prompt)
+    onLevelCountChange?.(template.levelCount)
+    message.success(`已加载模板：${template.name}`)
+  }
+
   return (
     <>
+      {/* 提示词模板 */}
+      <div>
+        <Text strong style={{ display: 'block', marginBottom: '8px' }}>
+          Prompt Template / 提示词模板
+        </Text>
+        <Select
+          placeholder="选择集大成模板一键填充"
+          style={{ width: '100%' }}
+          allowClear
+          onChange={(value) => value && handleTemplateSelect(value)}
+          options={PROMPT_TEMPLATES.map((t) => ({
+            value: t.id,
+            label: t.name,
+          }))}
+        />
+      </div>
+
       {/* 自定义主题名称 */}
       <div>
         <Text strong style={{ display: 'block', marginBottom: '8px' }}>Custom Theme Name</Text>
@@ -33,9 +61,9 @@ const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
         <TextArea
           value={customPrompt}
           onChange={(e) => onPromptChange(e.target.value)}
-          placeholder="Enter custom theme description"
-          rows={4}
-          style={{ width: '100%' }}
+          placeholder="Enter custom theme description, or load a template above"
+          rows={10}
+          style={{ width: '100%', fontSize: '12px' }}
         />
       </div>
 
@@ -48,7 +76,6 @@ const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
             const newValue = value || 1
             onLevelCountChange?.(newValue)
 
-            // 当用户输入值超过3时显示toast提示
             if (newValue > 3) {
               message.info('Generation results may take more time, please be patient', 3)
             }
@@ -59,7 +86,7 @@ const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({
           style={{ width: '100%' }}
         />
         <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: '4px' }}>
-          Generate 1-10 levels (default: 1)
+          Generate 1-10 levels (Odyssey template uses 5)
         </Text>
       </div>
     </>
