@@ -2,6 +2,12 @@
   "name": "pixel-seed",
   "version": "0.1.0",
   "private": true,
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp",
+      "@tailwindcss/oxide"
+    ]
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
