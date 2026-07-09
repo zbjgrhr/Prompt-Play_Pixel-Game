@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { formatGenerationError, mapUpstreamHttpStatus } from '@/lib/format-generation-error'
-import { GAME_TEMPLATES } from '@/configs'
+import { buildGamePrompt, getCutoutMode, getNegativeTemplate } from '@/lib/game-prompts'
 import { getLevelSpecificPrompt } from '@/lib/prompt-utils'
 import {
   getImageProvider,
@@ -25,17 +25,21 @@ interface GenerateRequest {
 function buildPrompt(
   type: 'character' | 'background' | 'ground' | 'obstacle',
   theme: string,
-  customPrompt?: string,
+  customPrompt: string | undefined,
+  providerId: ProviderId,
+  model: string,
 ): string {
-  const baseTemplate = GAME_TEMPLATES.positive[type]
-  const themePrompt = customPrompt || `${theme} style`
-  return `${baseTemplate}, ${themePrompt}`
+  return buildGamePrompt(type, theme, customPrompt, providerId, model)
 }
 
 async function processImageCutout(
   imageUrl: string,
   type: 'character' | 'background' | 'ground' | 'obstacle',
+  providerId: ProviderId,
+  model: string,
 ): Promise<string> {
+  const cutoutMode = getCutoutMode(providerId, type, model)
+
   try {
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/process-image`,
@@ -47,6 +51,7 @@ async function processImageCutout(
         body: JSON.stringify({
           imageUrl,
           type,
+          cutoutMode: cutoutMode ?? 'checkerboard',
         }),
       },
     )
@@ -75,7 +80,7 @@ async function generateImageWithProvider(
   const provider = getImageProvider(providerId)
   return provider.generateImage({
     prompt,
-    negativePrompt: GAME_TEMPLATES.negative[type],
+    negativePrompt: getNegativeTemplate(type, providerId, model),
     assetType: type,
     apiKey,
     model,
@@ -222,7 +227,7 @@ export async function POST(request: NextRequest) {
 
     let characterUrl = ''
     if (types.includes('character')) {
-      const characterPrompt = buildPrompt('character', theme, prompt)
+      const characterPrompt = buildPrompt('character', theme, prompt, providerId, modelId)
       console.log('Generating character image...')
       const originalUrl = await generateImageWithProvider(
         providerId,
@@ -235,7 +240,7 @@ export async function POST(request: NextRequest) {
       console.log(
         `[${new Date().toISOString()}] Auto-processing character image for background removal`,
       )
-      characterUrl = await processImageCutout(originalUrl, 'character')
+      characterUrl = await processImageCutout(originalUrl, 'character', providerId, modelId)
     }
 
     const levels = []
@@ -267,7 +272,7 @@ export async function POST(request: NextRequest) {
           }
 
           const levelPrompt = getLevelSpecificPrompt(prompt, levelIndex)
-          const typePrompt = buildPrompt(type, theme, levelPrompt)
+          const typePrompt = buildPrompt(type, theme, levelPrompt, providerId, modelId)
           const originalUrl = await generateImageWithProvider(
             providerId,
             modelId,
@@ -281,7 +286,7 @@ export async function POST(request: NextRequest) {
             console.log(
               `[${new Date().toISOString()}] Auto-processing ${type} image for ${levelId}`,
             )
-            finalUrl = await processImageCutout(originalUrl, type)
+            finalUrl = await processImageCutout(originalUrl, type, providerId, modelId)
           }
 
           level[`${type}Url`] = finalUrl
