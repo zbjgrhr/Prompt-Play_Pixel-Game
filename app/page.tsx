@@ -11,7 +11,9 @@ import {
   ThemePreview,
 } from '@/components/ui'
 import { PRESET_THEMES } from '@/configs'
-import { Theme } from '@/types'
+import { getDefaultModel, getDefaultProvider } from '@/configs/image-providers'
+import { Theme, GenerateImageRequest } from '@/types'
+import type { ProviderId } from '@/lib/image-providers/types'
 
 export default function Home() {
   const {
@@ -36,6 +38,8 @@ export default function Home() {
   }>({ character: false, background: false, ground: false, obstacle: false })
   const themesListRef = useRef<HTMLDivElement>(null)
   const [apiKey, setApiKey] = useState('')
+  const [selectedProvider, setSelectedProvider] = useState<ProviderId>(getDefaultProvider())
+  const [selectedModel, setSelectedModel] = useState(getDefaultModel(getDefaultProvider()))
 
   const saveThemesToStorage = (themes: Theme[]) => {
     try {
@@ -80,13 +84,7 @@ export default function Home() {
     saveThemesToStorage(themes)
   }
 
-  const generateImages = async (requestBody: {
-    theme: string;
-    prompt: string;
-    types: readonly ('character' | 'background' | 'ground' | 'obstacle')[];
-    levelCount?: number;
-    apiKey: string;
-  }) => {
+  const generateImages = async (requestBody: GenerateImageRequest) => {
     const response = await fetch('/api/generate', {
       method: 'POST',
       headers: {
@@ -95,15 +93,16 @@ export default function Home() {
       body: JSON.stringify(requestBody),
     })
 
+    const errorData = await response.json().catch(() => null)
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => null)
-      if (response.status === 429 || (errorData?.error?.includes('rate limit'))) {
+      if (response.status === 429 || errorData?.error?.includes('rate limit')) {
         throw new Error('API请求频率过高，请稍后再试')
       }
-      throw new Error(`HTTP error! status: ${response.status}`)
+      throw new Error(errorData?.error || `HTTP error! status: ${response.status}`)
     }
 
-    const result = await response.json()
+    const result = errorData
 
     if (!result.success) {
       if (result.error?.includes('rate limit')) {
@@ -147,9 +146,11 @@ export default function Home() {
         throw new Error('Theme not found')
       }
 
-      const requestBody = {
+      const requestBody: GenerateImageRequest = {
         theme: themeToRegenerate.name || themeId,
         prompt: themeToRegenerate.description || '',
+        provider: selectedProvider,
+        model: selectedModel,
         types: [imageType] as const,
         apiKey: apiKey.trim(),
       }
@@ -203,6 +204,8 @@ export default function Home() {
       } else {
         throw new Error(result.error || '图像重新生成失败')
       }
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '图像重新生成失败')
     } finally {
       setRegeneratingImages((prev) => ({ ...prev, [imageType]: false }))
     }
@@ -227,6 +230,10 @@ export default function Home() {
             <SideMenu
               apiKey={apiKey}
               onApiKeyChange={setApiKey}
+              selectedProvider={selectedProvider}
+              onProviderChange={setSelectedProvider}
+              selectedModel={selectedModel}
+              onModelChange={setSelectedModel}
               onStartGame={handleStartGame}
               onThemeUpdate={handleThemeUpdate}
               generateImages={generateImages}

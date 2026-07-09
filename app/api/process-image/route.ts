@@ -9,6 +9,14 @@ interface ProcessImageRequest {
 
 // 下载图像
 async function downloadImage(url: string): Promise<Buffer> {
+  if (url.startsWith('data:')) {
+    const base64 = url.split(',')[1]
+    if (!base64) {
+      throw new Error('Invalid data URL')
+    }
+    return Buffer.from(base64, 'base64')
+  }
+
   const response = await fetch(url)
   if (!response.ok) {
     throw new Error(`Failed to download image: ${response.status}`)

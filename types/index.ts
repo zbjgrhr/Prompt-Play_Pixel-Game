@@ -1,5 +1,8 @@
 import { ReactNode } from 'react'
 import { GameTheme } from '@/lib/theme-utils'
+import type { ProviderId } from '@/lib/image-providers/types'
+
+export type { ProviderId }
 
 // 主题相关类型
 export interface Theme {
@@ -47,10 +50,22 @@ export interface ProjectHeaderProps {
 
 // 模型选择器组件Props
 export interface ModelSelectorProps {
+  selectedProvider: ProviderId
+  onProviderChange: (provider: ProviderId) => void
   selectedModel: string
   onModelChange: (model: string) => void
   apiKey: string
   onApiKeyChange: (apiKey: string) => void
+}
+
+export interface GenerateImageRequest {
+  theme: string
+  prompt: string
+  provider: ProviderId
+  model: string
+  types: readonly ('character' | 'background' | 'ground' | 'obstacle')[]
+  levelCount?: number
+  apiKey: string
 }
 
 // 主题定制器组件Props

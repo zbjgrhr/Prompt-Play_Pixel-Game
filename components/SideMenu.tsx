@@ -12,20 +12,20 @@ import {
 } from './ui/index'
 import { PRESET_THEMES } from '../configs'
 import { syncPlayableLevels } from '@/lib/virtual-levels'
+import type { GenerateImageRequest } from '@/types'
+import type { ProviderId } from '@/lib/image-providers/types'
 
 export interface SideMenuProps {
   apiKey: string
   onApiKeyChange: (apiKey: string) => void
+  selectedProvider: ProviderId
+  onProviderChange: (provider: ProviderId) => void
+  selectedModel: string
+  onModelChange: (model: string) => void
   onStartGame?: () => void
   onCreateTheme?: () => void
   onThemeUpdate?: (themes: any[]) => void
-  generateImages?: (requestBody: {
-    theme: string;
-    prompt: string;
-    types: readonly ('character' | 'background' | 'ground' | 'obstacle')[];
-    levelCount?: number;
-    apiKey: string;
-  }) => Promise<any>
+  generateImages?: (requestBody: GenerateImageRequest) => Promise<any>
   onRegeneratingImagesChange?: (regeneratingImages: {
     character: boolean;
     background: boolean;
@@ -40,6 +40,10 @@ export interface SideMenuProps {
 const SideMenu: React.FC<SideMenuProps> = ({
   apiKey,
   onApiKeyChange,
+  selectedProvider,
+  onProviderChange,
+  selectedModel,
+  onModelChange,
   onStartGame,
   onCreateTheme,
   onThemeUpdate,
@@ -71,7 +75,6 @@ const SideMenu: React.FC<SideMenuProps> = ({
   const [showCustomInput, setShowCustomInput] = useState(false)
 
   const [customThemeName, setCustomThemeName] = useState('')
-  const [selectedModel, setSelectedModel] = useState('Qwen-Image')
   const [isThemeCreated, setIsThemeCreated] = useState(false)
   const [presetThemes, setPresetThemes] = useState(PRESET_THEMES)
 
@@ -134,9 +137,11 @@ const SideMenu: React.FC<SideMenuProps> = ({
       // 性能监控：记录开始时间
       const startTime = Date.now()
 
-      const requestBody = {
+      const requestBody: GenerateImageRequest = {
         theme: isCustomTheme ? (customThemeName.trim() || 'custom') : selectedTheme,
         prompt: isCustomTheme ? customPrompt : selectedThemeInfo?.description || '',
+        provider: selectedProvider,
+        model: selectedModel,
         types: ['character', 'background', 'ground', 'obstacle'] as const,
         levelCount: levelCount,
         apiKey: apiKey.trim(),
@@ -279,8 +284,10 @@ const SideMenu: React.FC<SideMenuProps> = ({
         <ProjectHeader />
 
         <ModelSelector
+          selectedProvider={selectedProvider}
+          onProviderChange={onProviderChange}
           selectedModel={selectedModel}
-          onModelChange={setSelectedModel}
+          onModelChange={onModelChange}
           apiKey={apiKey}
           onApiKeyChange={onApiKeyChange}
         />
