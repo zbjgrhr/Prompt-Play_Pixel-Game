@@ -28,3 +28,21 @@ export function getThemeId(theme: string | undefined | null): string {
   if (!theme || theme === 'custom') return 'fantasy'
   return theme
 }
+
+/** 将无效/loading 主题解析为可展示、可游玩的主题 ID */
+export function resolveValidTheme(theme: string | undefined | null): GameTheme {
+  if (!theme || isLoadingTheme(theme)) return 'fantasy'
+  if (isPresetTheme(theme)) return theme
+  if (isCustomTheme(theme)) return theme as GameTheme
+  return 'fantasy'
+}
+
+export function canPlayTheme(
+  theme: string,
+  hasGameData: boolean,
+): boolean {
+  if (isLoadingTheme(theme)) return false
+  if (isPresetTheme(theme)) return true
+  if (isCustomTheme(theme)) return hasGameData
+  return false
+}

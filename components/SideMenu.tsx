@@ -3,7 +3,7 @@
 import React, { useState } from 'react'
 import { message } from 'antd'
 import { useGameStore } from '@/lib/store'
-import { GameTheme } from '@/lib/theme-utils'
+import { GameTheme, isPresetTheme, resolveValidTheme } from '@/lib/theme-utils'
 import {
   ProjectHeader,
   ModelSelector,
@@ -12,6 +12,7 @@ import {
 } from './ui/index'
 import { PRESET_THEMES } from '../configs'
 import { syncPlayableLevels } from '@/lib/virtual-levels'
+import { formatGenerationError } from '@/lib/format-generation-error'
 import type { GenerateImageRequest } from '@/types'
 import type { ProviderId } from '@/lib/image-providers/types'
 
@@ -98,7 +99,18 @@ const SideMenu: React.FC<SideMenuProps> = ({
       }
     }
 
+    const trimmedKey = apiKey.trim()
+    if (
+      trimmedKey.startsWith('[') ||
+      trimmedKey.includes('[Intervention]') ||
+      (selectedProvider === 'openai' && trimmedKey && !trimmedKey.startsWith('sk-'))
+    ) {
+      message.error('API Key 格式无效。请清空输入框，从 platform.openai.com 只复制 sk- 开头的 Key。')
+      return
+    }
+
     const selectedThemeInfo = presetThemes.find(theme => theme.id === selectedTheme)
+    const fallbackTheme = resolveValidTheme(selectedTheme)
     const loadingThemeId = `loading-${Date.now()}` as GameTheme
     const loadingTheme = {
       id: loadingThemeId,
@@ -233,12 +245,17 @@ const SideMenu: React.FC<SideMenuProps> = ({
       }
     } catch (error) {
       console.error('Generation error:', error)
-      message.error(`Generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      const raw = error instanceof Error ? error.message : 'Unknown error'
+      message.error(formatGenerationError(raw))
       const filteredThemes = updatedThemes.filter(theme => !(theme as any).isLoading)
       setPresetThemes(filteredThemes)
       onThemeUpdate?.(filteredThemes)
       setGameState('menu')
-      
+
+      const { removeGameDataForTheme } = useGameStore.getState()
+      removeGameDataForTheme(loadingThemeId)
+      setSelectedTheme(fallbackTheme)
+
       // Reset regenerating images state on error
       onRegeneratingImagesChange?.({
         character: false,
@@ -253,7 +270,16 @@ const SideMenu: React.FC<SideMenuProps> = ({
 
   const handleStartGame = () => {
     const state = useGameStore.getState()
-    const { gameData, levelCount, selectedTheme, setGameData, setCurrentLevelIndex, setTotalLevels, setGameState, saveToLocalStorage } = state
+    let { gameData, levelCount, selectedTheme, setGameData, setCurrentLevelIndex, setTotalLevels, setGameState, saveToLocalStorage, setSelectedTheme } = state
+
+    const hasGameData = Boolean(gameData?.data?.levels?.length || gameData?.data?.characterUrl)
+    if (!isPresetTheme(selectedTheme) && (!hasGameData || selectedTheme.startsWith('loading-'))) {
+      setSelectedTheme('fantasy')
+      selectedTheme = 'fantasy'
+      gameData = state.gameDataByTheme['fantasy'] || {}
+      message.info('已切换到 Fantasy 预设主题（当前主题无可用资源）')
+    }
+
     const { gameData: synced, totalLevels } = syncPlayableLevels(selectedTheme, levelCount, gameData)
     if (synced.data?.levels?.length) {
       setGameData(synced, selectedTheme)

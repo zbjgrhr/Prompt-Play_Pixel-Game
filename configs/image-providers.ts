@@ -43,14 +43,20 @@ export const IMAGE_PROVIDERS: ProviderConfig[] = [
     keyHintZh: 'OpenAI API Key · platform.openai.com',
     models: [
       {
-        id: 'dall-e-3',
-        label: 'DALL·E 3',
+        id: 'gpt-image-2',
+        label: 'GPT Image 2',
         supportsNegativePrompt: false,
         endpointKind: 'images',
       },
       {
-        id: 'gpt-image-1',
-        label: 'GPT Image 1',
+        id: 'gpt-image-1.5',
+        label: 'GPT Image 1.5',
+        supportsNegativePrompt: false,
+        endpointKind: 'images',
+      },
+      {
+        id: 'gpt-image-1-mini',
+        label: 'GPT Image 1 Mini',
         supportsNegativePrompt: false,
         endpointKind: 'images',
       },
@@ -65,8 +71,14 @@ export const IMAGE_PROVIDERS: ProviderConfig[] = [
     keyHintZh: 'OpenRouter Key · 一个 Key 可选多模型 · openrouter.ai',
     models: [
       {
-        id: 'openai/gpt-image-1',
-        label: 'OpenAI GPT Image 1',
+        id: 'openai/gpt-image-2',
+        label: 'OpenAI GPT Image 2',
+        supportsNegativePrompt: false,
+        endpointKind: 'images',
+      },
+      {
+        id: 'openai/gpt-image-1.5',
+        label: 'OpenAI GPT Image 1.5',
         supportsNegativePrompt: false,
         endpointKind: 'images',
       },
@@ -95,7 +107,7 @@ export function getModelConfig(providerId: ProviderId, modelId: string): ModelCo
 }
 
 export function getDefaultProvider(): ProviderId {
-  return 'dashscope'
+  return 'openai'
 }
 
 export function getDefaultModel(providerId: ProviderId): string {
@@ -104,4 +116,21 @@ export function getDefaultModel(providerId: ProviderId): string {
 
 export function isValidProviderModel(providerId: ProviderId, modelId: string): boolean {
   return Boolean(getModelConfig(providerId, modelId))
+}
+
+const DEPRECATED_MODEL_ALIASES: Record<string, string> = {
+  'dall-e-3': 'gpt-image-2',
+  'dall-e-2': 'gpt-image-2',
+  'gpt-image-1': 'gpt-image-2',
+  'openai/gpt-image-1': 'openai/gpt-image-2',
+}
+
+/** Maps retired or unknown model ids to a supported default. */
+export function resolveModel(providerId: ProviderId, modelId: string): string {
+  if (isValidProviderModel(providerId, modelId)) return modelId
+
+  const alias = DEPRECATED_MODEL_ALIASES[modelId]
+  if (alias && isValidProviderModel(providerId, alias)) return alias
+
+  return getDefaultModel(providerId)
 }

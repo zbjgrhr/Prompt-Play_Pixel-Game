@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { GameTheme, getThemeId } from '@/lib/theme-utils'
+import { GameTheme, getThemeId, isCustomTheme, resolveValidTheme } from '@/lib/theme-utils'
 
 export type { GameTheme } from '@/lib/theme-utils'
 export type GameState = 'menu' | 'loading' | 'playing'
@@ -322,13 +322,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const saved = localStorage.getItem('pixel-seed-game-data')
       if (saved) {
         const data = JSON.parse(saved)
-        const selectedTheme = data.selectedTheme || 'fantasy'
+        const rawTheme = data.selectedTheme || 'fantasy'
         const gameDataByTheme = data.gameDataByTheme || {}
 
         // 迁移旧版单份 gameData 到按主题存储
         if (data.gameData?.data && Object.keys(gameDataByTheme).length === 0) {
-          const legacyThemeId = getThemeId(selectedTheme)
+          const legacyThemeId = getThemeId(rawTheme)
           gameDataByTheme[legacyThemeId] = data.gameData
+        }
+
+        let selectedTheme = resolveValidTheme(rawTheme)
+        if (isCustomTheme(selectedTheme) && !gameDataByTheme[selectedTheme]?.data) {
+          selectedTheme = 'fantasy'
         }
 
         const themeData = gameDataByTheme[selectedTheme] || data.gameData || {}

@@ -9,9 +9,39 @@ interface OpenAICompatibleOptions {
   extraHeaders?: Record<string, string>
 }
 
+const GPT_IMAGE_SIZES = new Set(['1024x1024', '1024x1536', '1536x1024'])
+
+function isGptImageModel(model: string): boolean {
+  return /gpt-image/i.test(model)
+}
+
 function buildPromptWithNegative(prompt: string, negativePrompt?: string): string {
   if (!negativePrompt?.trim()) return prompt
   return `${prompt}. Avoid: ${negativePrompt}`
+}
+
+function normalizeSize(model: string, size: string): string {
+  const normalized = size.replace('*', 'x')
+  if (!isGptImageModel(model)) return normalized
+
+  if (GPT_IMAGE_SIZES.has(normalized)) return normalized
+  if (normalized === '1792x1024') return '1536x1024'
+  return '1024x1024'
+}
+
+function buildRequestBody(params: GenerateImageParams, prompt: string, size: string) {
+  const body: Record<string, unknown> = {
+    model: params.model,
+    prompt,
+    n: 1,
+    size,
+  }
+
+  if (isGptImageModel(params.model)) {
+    body.quality = 'medium'
+  }
+
+  return body
 }
 
 function parseImageResponse(result: {
@@ -30,7 +60,7 @@ export async function callOpenAICompatibleImagesAPI(
   options: OpenAICompatibleOptions,
 ): Promise<string> {
   const prompt = buildPromptWithNegative(params.prompt, params.negativePrompt)
-  const size = params.size ?? '1024x1024'
+  const size = normalizeSize(params.model, params.size ?? '1024x1024')
 
   const response = await fetch(`${options.baseUrl}/images/generations`, {
     method: 'POST',
@@ -39,12 +69,7 @@ export async function callOpenAICompatibleImagesAPI(
       Authorization: `Bearer ${params.apiKey}`,
       ...options.extraHeaders,
     },
-    body: JSON.stringify({
-      model: params.model,
-      prompt,
-      n: 1,
-      size,
-    }),
+    body: JSON.stringify(buildRequestBody(params, prompt, size)),
   })
 
   if (!response.ok) {

@@ -12,6 +12,8 @@ import {
 } from '@/components/ui'
 import { PRESET_THEMES } from '@/configs'
 import { getDefaultModel, getDefaultProvider } from '@/configs/image-providers'
+import { formatGenerationError } from '@/lib/format-generation-error'
+import { loadImageApiPrefs, saveImageApiPrefs } from '@/lib/image-api-prefs'
 import { Theme, GenerateImageRequest } from '@/types'
 import type { ProviderId } from '@/lib/image-providers/types'
 
@@ -41,6 +43,29 @@ export default function Home() {
   const [selectedProvider, setSelectedProvider] = useState<ProviderId>(getDefaultProvider())
   const [selectedModel, setSelectedModel] = useState(getDefaultModel(getDefaultProvider()))
 
+  const persistImageApiPrefs = (
+    provider: ProviderId = selectedProvider,
+    model: string = selectedModel,
+    key: string = apiKey,
+  ) => {
+    saveImageApiPrefs({ provider, model, apiKey: key })
+  }
+
+  const handleProviderChange = (provider: ProviderId) => {
+    setSelectedProvider(provider)
+    persistImageApiPrefs(provider, selectedModel, apiKey)
+  }
+
+  const handleModelChange = (model: string) => {
+    setSelectedModel(model)
+    persistImageApiPrefs(selectedProvider, model, apiKey)
+  }
+
+  const handleApiKeyChange = (key: string) => {
+    setApiKey(key)
+    persistImageApiPrefs(selectedProvider, selectedModel, key)
+  }
+
   const saveThemesToStorage = (themes: Theme[]) => {
     try {
       localStorage.setItem('pixel-seed-themes', JSON.stringify(themes))
@@ -65,6 +90,11 @@ export default function Home() {
     const storedThemes = loadThemesFromStorage()
     setPresetThemes(storedThemes)
     loadFromLocalStorage()
+
+    const prefs = loadImageApiPrefs()
+    setSelectedProvider(prefs.provider)
+    setSelectedModel(prefs.model)
+    setApiKey(prefs.apiKey)
   }, [loadFromLocalStorage])
 
   const handleThemeSelect = (themeId: GameTheme) => {
@@ -96,19 +126,21 @@ export default function Home() {
     const errorData = await response.json().catch(() => null)
 
     if (!response.ok) {
-      if (response.status === 429 || errorData?.error?.includes('rate limit')) {
-        throw new Error('API请求频率过高，请稍后再试')
+      const friendly = formatGenerationError(errorData?.error || '')
+      if (response.status === 429 || friendly.includes('频率过高')) {
+        throw new Error('API 请求频率过高，请稍后再试')
       }
-      throw new Error(errorData?.error || `HTTP error! status: ${response.status}`)
+      throw new Error(friendly || errorData?.error || `HTTP error! status: ${response.status}`)
     }
 
     const result = errorData
 
     if (!result.success) {
-      if (result.error?.includes('rate limit')) {
-        throw new Error('API请求频率过高，请稍后再试')
+      const friendly = formatGenerationError(result.error || '')
+      if (friendly.includes('频率过高')) {
+        throw new Error('API 请求频率过高，请稍后再试')
       }
-      throw new Error(result.error || '图像生成失败')
+      throw new Error(friendly || result.error || '图像生成失败')
     }
 
     return result
@@ -229,11 +261,11 @@ export default function Home() {
           >
             <SideMenu
               apiKey={apiKey}
-              onApiKeyChange={setApiKey}
+              onApiKeyChange={handleApiKeyChange}
               selectedProvider={selectedProvider}
-              onProviderChange={setSelectedProvider}
+              onProviderChange={handleProviderChange}
               selectedModel={selectedModel}
-              onModelChange={setSelectedModel}
+              onModelChange={handleModelChange}
               onStartGame={handleStartGame}
               onThemeUpdate={handleThemeUpdate}
               generateImages={generateImages}

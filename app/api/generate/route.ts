@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { formatGenerationError, mapUpstreamHttpStatus } from '@/lib/format-generation-error'
 import { GAME_TEMPLATES } from '@/configs'
 import { getLevelSpecificPrompt } from '@/lib/prompt-utils'
 import {
@@ -136,15 +137,19 @@ function errorResponse(
   }
 
   if (error instanceof UpstreamApiError) {
+    const friendlyError = formatGenerationError(error.message)
+    const status = mapUpstreamHttpStatus(error.status, error.message)
+
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
+        error: friendlyError,
+        rawError: error.message,
         provider: error.provider,
         model: error.model,
         timestamp: new Date().toISOString(),
       },
-      { status: error.status === 429 ? 429 : 502 },
+      { status },
     )
   }
 

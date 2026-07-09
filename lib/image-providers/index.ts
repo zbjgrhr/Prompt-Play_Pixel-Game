@@ -3,6 +3,7 @@ import {
   getDefaultProvider,
   getProviderConfig,
   isValidProviderModel,
+  resolveModel,
 } from '@/configs/image-providers'
 import { dashscopeProvider } from '@/lib/image-providers/dashscope'
 import { openaiProvider } from '@/lib/image-providers/openai'
@@ -52,7 +53,7 @@ export function normalizeProviderRequest(
     throw new ProviderValidationError(`Invalid provider: ${provider}`, resolvedProvider)
   }
 
-  const resolvedModel = model?.trim() || getDefaultModel(resolvedProvider)
+  const resolvedModel = resolveModel(resolvedProvider, model?.trim() || getDefaultModel(resolvedProvider))
 
   if (!isValidProviderModel(resolvedProvider, resolvedModel)) {
     throw new ProviderValidationError(

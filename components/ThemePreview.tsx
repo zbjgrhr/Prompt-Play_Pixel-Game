@@ -6,7 +6,7 @@ import { DownloadOutlined, RotateLeftOutlined, RotateRightOutlined, SwapOutlined
 import { ThemePreviewProps } from '@/types'
 import { useState, useEffect, useMemo } from 'react'
 import { useGameStore } from '@/lib/store'
-import { getThemeId, isCustomTheme, isPresetTheme } from '@/lib/theme-utils'
+import { getThemeId, isCustomTheme, isPresetTheme, resolveValidTheme } from '@/lib/theme-utils'
 
 const { Text } = Typography
 
@@ -217,7 +217,8 @@ const ThemePreview: React.FC<ThemePreviewProps> = ({
   }, [loadFromLocalStorage])
   // 使用useMemo优化图像数据计算
   const { previewImages, levelsData, currentThemeId } = useMemo(() => {
-    const themeId = getThemeId(selectedTheme)
+    const effectiveTheme = resolveValidTheme(selectedTheme)
+    const themeId = getThemeId(effectiveTheme)
     let baseImages: any = {
       character: null,
       background: null,
@@ -226,8 +227,8 @@ const ThemePreview: React.FC<ThemePreviewProps> = ({
     }
     let levels = null
 
-    if (selectedTheme && isPresetTheme(selectedTheme)) {
-      const theme = themes.find(t => t.id === selectedTheme)
+    if (effectiveTheme && isPresetTheme(effectiveTheme)) {
+      const theme = themes.find(t => t.id === effectiveTheme)
       if (theme) {
         baseImages = {
           character: { url: theme.characterImage },
@@ -238,7 +239,7 @@ const ThemePreview: React.FC<ThemePreviewProps> = ({
         // 为预设主题创建虚拟关卡数据
         levels = [{ backgroundUrl: theme.backgroundImage }]
       }
-    } else if (isCustomTheme(selectedTheme) && gameData?.data) {
+    } else if (isCustomTheme(effectiveTheme) && gameData?.data) {
       const characterUrl = gameData.data.characterUrl
       const firstLevel = gameData.data.levels?.[0]
       const backgroundUrl = firstLevel?.backgroundUrl
